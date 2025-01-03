@@ -1,0 +1,40 @@
+name: Restrict Discussions to Issues
+
+on:
+  discussion:
+    types: [transferred] # 监听 Discussions 转移为 Issues 的事件
+
+jobs:
+  restrict-discussion-transfer:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Restrict Transfer Based on User
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 定义允许转移的用户
+          authorized_users=("Jaynscc") # 替换为实际的 GitHub 用户名
+          actor="${{ github.actor }}" # 获取当前执行操作的用户
+
+          if [[ ! " ${authorized_users[@]} " =~ " ${actor} " ]]; then
+            echo "Unauthorized transfer attempt by $actor."
+
+            # 通过 GitHub API 获取 Discussion 原始信息
+            discussion_url=$(jq -r '.discussion.html_url' "$GITHUB_EVENT_PATH")
+            discussion_title=$(jq -r '.discussion.title' "$GITHUB_EVENT_PATH")
+            discussion_body=$(jq -r '.discussion.body' "$GITHUB_EVENT_PATH")
+            discussion_category_id=$(jq -r '.discussion.category.id' "$GITHUB_EVENT_PATH")
+
+            # 将 Discussion 转回原始分类
+            curl -X POST \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              https://api.github.com/repos/${{ github.repository }}/discussions \
+              -d "{\"category_id\": ${discussion_category_id}, \"title\": \"${discussion_title}\", \"body\": \"${discussion_body}\"}"
+
+            echo "Discussion reverted due to unauthorized transfer."
+            exit 1
+          fi
+
+          echo "Transfer authorized for $actor."
